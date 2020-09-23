@@ -3,7 +3,7 @@ Data handling, analysis, and simulation files for working with interruption netw
 
 ---
 
-The working data for this study can be downloaded from Binghamton University's [Open Repository @ Binghamton](https://orb.binghamton.edu/management_fac/2/). To work with these files, download the repository and place `InterruptionAnalysis.py` and any script files in the home directory. Paths in the script files in this repository assume a path `<home>/data/diarizations/`.
+The working data for this study can be downloaded from Binghamton University's [Open Repository @ Binghamton](https://orb.binghamton.edu/management_fac/2/). To work with these files, download the repository and place `InterruptionAnalysis.py` and any script files in the home directory. Paths in the script files in this repository assume a path `<home>/data/diarizations/`. `Python-to-R.py` depends on the file `timeseries.csv` produced by `collect-ts-data.py`.
 
 ## File Notes
 
