@@ -117,34 +117,169 @@ def kullback_leibler_divergence(g):
 #### Markov Analysis Functions ####
 ###################################
 
-def get_transition_matrix(data, x): #where ~x~ is a pID
+def get_transition_matrix(data, x): #where ~x~ is a pID ####### should be ~r~ to be consistent
     """
-    For a given data frame ~data~, return the Markov transition probability matrix associated with group member ~x~. ~data~ should have the columns 'pID', 'gID', 'start', 'end', and 'dur'. 
+    For a given data frame ~data~, return the Markov transition probability matrix associated with group member ~x~. ~data~ should have the columns 'pID', 'gID', 'begin', 'end', and 'dur'. 
     Let u_X be the number of distinct speaking events coded for participant X.
-    Let tst be the sum of 
-    Let A represent the event that participant X is talking and B represent the event that participant X is not talking. 
+    Let A represent the event that participant X is not talking (state 'o' in the ABM) and B represent the event that participant X is talking (state 'e'). 
     We have a matrix P_X for each participant the values of which are represented by 
 from\to  A      B
 A        P(A|A) P(B|A)
 B        P(A|B) P(B|B)
+
     """
     gID = list(data[data['pID'] == x]['gID'])[0]
     grpdata = data[data['gID'] == gID]
     X = data[data['pID'] == x]
 
     u_X = len(X)
-    N_A = sum(X['dur'])
-    N_B = max(grpdata['end']) - N_A
-    P_BA = u_X/N_A
+    N_B = sum(X['dur'])
+    N_A = max(grpdata['end']) - N_B
     P_AB = u_X/N_B
-    P_AA = 1 - P_BA
+    P_BA = u_X/N_A
     P_BB = 1 - P_AB
+    P_AA = 1 - P_BA
 
     P = np.array([[P_AA, P_BA],
                   [P_AB, P_BB]])
     return P
 
+def get_threestate_transition_matrix(data, x):
+    """
+    For a given data frame ~data~, return the three-state Markov transition probability matrix associated with group member ~pID~ (~x~). ~data~ should have the columns 'pID', 'gID', 'start', 'end', and 'dur'. 
+    Let A represent the event that no participant is talking (x is "listening" to silence), B represent the event that participant x is not talking but at least one participant x_i is talking (x is "listening" to one or more x_i talking), and C represent the event that partixipant x is talking (x is talking).
+    We have a matrix P_X for each participant the values of which are represented by 
+from\to  A      B      C
+A        P(A|A) P(B|A) P(C|A)
+B        P(A|B) P(B|B) P(C|B)
+C        P(A|C) P(B|C) P(C|C)
+    """
+    gID = list(data[data['pID'] == x]['gID'])[0]
+    grpdata = data[data['gID'] == gID]
+    pIDs = pd.unique(grpdata['pID'])
+    X = data[data['pID'] == x]
+    nox = grpdata[-(grpdata['pID'].isin([x]))]
 
+    interruptions = interruptive_simultaneous_speech(data, pIDs)
+    interjections = non_interruptive_simultaneous_speech(data, pIDs)
+    ξ = interruptions[interruptions['i'] == x]
+    ζ = interjections[interjections['j'] == x]
+    ξp = interruptions[interruptions['j'] == x] # someone interrupts me
+    ζp = interjections[interjections['i'] == x] # someone interjects me
+
+    nox_ξ = interruptions[-(interruptions['i'].isin([x]))]
+    nox_ζ = interjections[-(interjections['j'].isin([x]))]
+
+    T = max(grpdata['end'])
+
+    u_x = len(X)
+    u_nox = len(nox)
+    u_ξ = len(ξ)
+    u_ζ = len(ζ)
+    u_ξp = len(ξp)
+    u_ζp = len(ζp)
+    u_nox_ξ = len(nox_ξ)
+    u_nox_ζ = len(nox_ζ)
+    N_C = sum(X['dur'])
+    N_B = sum(nox['dur'])
+    N_A = T - N_B - N_C
+
+    # some of these are yielding numbers outside [0,1]
+    #P_CA = (u_x - u_ξ - u_ζ)/N_A
+    P_CA = len(
+        pd.unique(X[
+            -(X['begin'].isin(ξ['begin']) |
+              X['begin'].isin(ζ['begin']))
+        ]['begin']
+                  ))/N_A
+    #P_BA = (u_nox - u_nox_ξ - u_nox_ζ)/N_A
+    P_BA = len(
+        pd.unique(nox[
+            -(nox['begin'].isin(nox_ξ['begin']) |
+              nox['begin'].isin(nox_ζ['begin']))
+        ]['begin']
+                  ))/N_A
+    P_AA = 1 - (P_CA + P_BA)
+
+    #P_CB = (u_ξ + u_ζ)/N_B
+    P_CB = (len(pd.unique(ξ['begin'])) +
+            len(pd.unique(ζ[
+                -(ζ['begin'].isin(ξ['begin']))
+            ]['begin']))
+            )/N_B
+    #P_AB = (u_nox - u_nox_ξ - u_nox_ζ)/N_B # this is wrong --> (u_ξ + u_ζ + u_ξp + u_ζp)
+    P_AB = len(
+        pd.unique(nox[
+            -(nox['end'].isin(ζ['end']))]['end']
+                  ))/N_B
+    P_BB = 1 - (P_CB + P_AB)
+
+    #P_BC = u_ζ/N_C
+    P_BC = (len(pd.unique(ζp['begin'])) + len(pd.unique(ξp['begin'])))/N_C
+    #P_AC = (u_x - u_ζ)/N_C # this will miss any cases where I start speaking during someone's turn, interrupt them, they stop, but someone else is still speaking when I stop
+    P_AC = len(X[-(X['end'].isin(ζ['end']))])/N_C
+    P_CC = 1 - (P_BC + P_AC)
+
+    P = np.array([
+        [P_AA, P_BA, P_CA],
+        [P_AB, P_BB, P_CB],
+        [P_AC, P_BC, P_CC]])
+    
+    return P
+
+def otherstate_dependent_markov(data, pID): # this could probably be cleaned up a little now
+     """
+     For a given data frame ~data~, return the Markov transition probability matrices associated with group member ~x~. ~data~ should have the columns 'pID', 'gID', 'start', 'end', and 'dur'. In this case, there is a hard-coded pair of state sets: a 'perceptual' state of 'someone else is talking/not talking' and a 'self' state of 'talking/not talking'.
+     """
+     gID = list(data[data['pID'] == pID]['gID'])[0]
+     data = data[data['gID'] == gID]
+     pIDs = pd.unique(data['pID']) 
+     x = data[data['pID'] == pID]
+     nox = data[data['pID'] != pID]
+
+     interruptions = interruptive_simultaneous_speech(data, pIDs)
+     interjections = non_interruptive_simultaneous_speech(data, pIDs)
+
+     ξ = interruptions[interruptions['i'] == pID]
+     ζ = interjections[interjections['j'] == pID]
+     ξp = interruptions[interruptions['j'] == pID]
+     overlap = ξ['dur'].sum() + ζ['dur'].sum() + ξp['dur'].sum()
+
+     T = max(data['end'])
+
+     N_B = x['dur'].sum()
+     N_A = T - N_B
+     N_D = nox['dur'].sum()#- (interruptions[~interruptions.isin([pID])]['dur'].sum() + interjections[~interjections.isin([pID])]['dur'].sum())
+     N_C = T - N_D
+
+     # there are errors if there is no overlap
+     P_BAC = (len(x) - (len(ξ) + len(ζ)))/(T - N_B - N_D)#(N_C - N_B)
+     P_AAC = 1 - P_BAC
+     P_ABC = (len(x) - len(ξp))/(N_B - overlap)#(N_C + N_B - (ξ['dur'].sum() + ζ['dur'].sum()))
+     P_BBC = 1 - P_ABC
+     PC = np.array([
+         [P_AAC, P_BAC],
+         [P_ABC, P_BBC]
+     ])
+     P_BAD = (len(ξ) + len(ζ))/(N_D - overlap)#(N_D - (ξ['dur'].sum() + ζ['dur'].sum()))
+     P_AAD = 1 - P_BAD
+     try:
+         P_ABD = len(ξp)/(overlap)#(N_D + (ξ['dur'].sum() + ζ['dur'].sum()))
+     except:
+         P_ABD = np.nan
+     
+     P_BBD = 1 - P_ABD
+     PD = np.array([
+         [P_AAD, P_BAD],
+         [P_ABD, P_BBD]
+     ])
+
+     return [PC, PD]
+
+# def g_n_dependent_markov(data, pID):
+     # the idea here is going to be to make the calculations for otherstate_dependent_markov(), above, be recalculated for each other g_n. There will be lots of NA values. For this function and the one above, the except clause shouldn't assign P_ABD as np.nan, but rather as the corresponding value for no one talking, P_ABC---right? Or just shut off? No, I think P_ABC, because it's not that the interruption couldn't happen, it's that we didn't observe it.
+#     pass
+ 
 ############################################
 #### General Network Analysis Functions ####
 ############################################
@@ -286,14 +421,19 @@ def icc1(X, model, k):
 def contact_sequence(data, pIDs):
     """
     Given a pd.DataFrame with variables ['gID', 'pID', 'begin', 'end'], generate a contact sequence of events (j, i, t) where j is the group member being interrupted, i is the group member doing the interrupting, and t is the start time of the interruptive speech.
+    Ref: Holme & Saramäki (2012)
     """
     C = []
 
     data = data[data['pID'].isin(pIDs)]
     for i in range(len(data)):
         ego = data.iloc[i, :]
-        interruptions = data[(data['end'] > ego['end']) &
-                              (data['begin'] < ego['end'])]
+        interruptions = data[
+            (data['end'] > ego['end']) &
+            (data['begin'] < ego['end']) &
+            (data['begin'] >= ego['begin'])
+        ]
+        
         if interruptions.empty:
             continue
         else:
@@ -304,6 +444,93 @@ def contact_sequence(data, pIDs):
     C = sorted(C, key = lambda x: x[2])
     return C
 
+def interruptive_simultaneous_speech(data, pIDs):
+    """
+    Given a pd.DataFrame with variables ['gID', 'pID', 'begin', 'end'], generate an interval sequnce of events (j, i, t, t') where j is the group member being interrupted, i is the group member doing the interrupting, t is the start time of the interruptive speech, and t' is the end time of the interruptive speech. 
+    ? Returns a data frame.
+    Refs: Feldstein & W___ (1987), Holme & Saramäki (2012). This algorithm accepts overlapping edges, which Holme & Saramäki do not consider.
+    """
+    L = []
+
+    data = data[data['pID'].isin(pIDs)]
+    for i in range(len(data)):
+        ego = data.iloc[i, :]
+        # This needs to be changed
+        overlaps = data[
+            # someone interrupts me
+            ((data['end'] > ego['end']) &
+             (data['begin'] < ego['end']) &
+             (data['begin'] >= ego['begin'])) #|
+            # I fail to interrupt someone else ################ this needs to be in a separate df
+            #((data['begin'] <= ego['begin']) &
+            # (data['end'] >= ego['end']))
+        ]
+            # ((data['begin'] < ego['begin']) &
+            #  (data['end'] > ego['end'])) |
+            # # Someone fails to interrupt me
+            # ((data['begin'] < ego['begin']) &
+            #  (data['end'] < ego['end']))]
+
+        if overlaps.empty:
+            continue
+        else:
+            for j in range(len(overlaps)):
+                alter = overlaps.iloc[j, :]
+                # interval is from the start of the interruptive speech until the end of the interruptive speech
+                # the start is alter['begin']
+                # the end is ego['end']
+                start = max([ego['begin'], alter['begin']])
+                stop = min([ego['end'], alter['end']])
+                l = (ego['pID'], alter['pID'], start, stop, stop - start) 
+                L.append(l)
+    L = sorted(L, key = lambda x: x[2])
+    L = pd.DataFrame(L, columns = ['j', 'i', 'begin', 'end', 'dur'])
+    return L
+
+def non_interruptive_simultaneous_speech(data, pIDs):
+    """
+    Given a pd.DataFrame with variables ['gID', 'pID', 'begin', 'end'], generate an interval sequnce of events (j, i, t, t') where j is the group member being interjected, i is the group member doing the interjective, t is the start time of the non-interruptive speech, and t' is the end time of the non-interruptive speech. 
+    ? Returns a data frame.
+    Refs: Feldstein & W___ (1987), Holme & Saramäki (2012). This algorithm accepts overlapping edges, which Holme & Saramäki do not consider.
+    """
+    L = []
+
+    data = data[data['pID'].isin(pIDs)]
+    for i in range(len(data)):
+        ego = data.iloc[i, :]
+        # This needs to be changed
+        overlaps = data[
+            # someone interrupts me
+            # ((data['end'] > ego['end']) &
+            # (data['begin'] < ego['end']) &
+            # (data['begin'] >= ego['begin'])) |
+            # I fail to interrupt someone else ################ this needs to be in a separate df
+            ((data['begin'] <= ego['begin']) &
+             (data['end'] > ego['end']))
+        ]
+            # ((data['begin'] < ego['begin']) &
+            #  (data['end'] > ego['end'])) |
+            # # Someone fails to interrupt me
+            # ((data['begin'] < ego['begin']) &
+            #  (data['end'] < ego['end']))]
+
+        if overlaps.empty:
+            continue
+        else:
+            for j in range(len(overlaps)):
+                alter = overlaps.iloc[j, :]
+                # interval is from the start of the interruptive speech until the end of the interruptive speech
+                # the start is alter['begin']
+                # the end is ego['end']
+                start = max([ego['begin'], alter['begin']])
+                stop = min([ego['end'], alter['end']])
+                l = (ego['pID'], alter['pID'], start, stop, stop - start) 
+                L.append(l)
+    L = sorted(L, key = lambda x: x[2])
+    L = pd.DataFrame(L, columns = ['j', 'i', 'begin', 'end', 'dur'])
+    return L
+
+    
 def time_to_contact_network(C, pIDs):
     """
     Given a contact sequence, C, return the corresponding time-to-contact network in which nodes are group members, edges are the first time i interrupts j (edge goes from j to i), and edges are weighted by the time elapsing from the beginning of the observation period until the focal interruption.
@@ -337,7 +564,7 @@ def interruption_network(C, pIDs):
     inet.add_weighted_edges_from(interruption_edges)
     return inet
         
-def vote_network(data, pIDs, vote_cols):
+def vote_network(data, pIDs, vote_cols, self_loops = False):
     """
     Given a set of participants, ~pIDs~, and a set of columns containing directed vote data, ~vote_cols~, return a directed "vote network," sometimes called a "leadership network."
     This function expects a pd.DataFrame, ~data~, with a column for participant IDs, a corresponding integer workstation ID ('wID'), and one or more columns of votes, the values of which are also wIDs corresponding to other pIDs.
@@ -357,7 +584,10 @@ def vote_network(data, pIDs, vote_cols):
             if pd.notna(dat.loc[pID, v]):
                 i = pID
                 j = dat[dat['wID'] == dat.loc[pID, v]]['pID'][0]
-                new_edge = (str(i), str(j))
+                if self_loops == False and i == j:
+                    continue
+                else:
+                    new_edge = (str(i), str(j))
                 vnet_edgelist.append(new_edge)
     
     vnet.add_edges_from(vnet_edgelist)
@@ -495,17 +725,17 @@ def count_motifs(g, motif_size, only_connected = True): # only_connected not imp
     freqs = {}
     for bunch in itertools.combinations(g.nodes, motif_size):
         sg = g.subgraph(bunch)
-        # connected = nx.is_weakly_connected(sg) if sg.is_directed() == True else nx.is_connected(sg)
+        connected = nx.is_weakly_connected(sg) if sg.is_directed() == True else nx.is_connected(sg)
 
-        # if only_connected == True and connected == False:
-        #     continue
-        # else:
-        for motif in freqs:
-            if nx.is_isomorphic(sg, motif):
-                freqs[motif] += 1
-                break
+        if only_connected == True and connected == False:
+            continue
         else:
-            freqs[sg] = 1
+            for motif in freqs:
+                if nx.is_isomorphic(sg, motif):
+                    freqs[motif] += 1
+                    break
+            else:
+                freqs[sg] = 1
     return freqs
 
 def collect_motif_counts(count_list):
@@ -519,3 +749,125 @@ def collect_motif_counts(count_list):
             else:
                 freqs[key] = 1
     return freqs
+
+##############################
+#### Burstiness Functions ####
+##############################
+
+def bursty_coef(data, finite = True):
+    """
+    Return the burstiness parameter, B, from a series of inter-event times, τ (here, `data`).
+    Ref is Karsai et al 2018, "Bursty Human Dynamics."
+    This function will expect a time series of data consisting of inter-event times.
+    τ: the time series of inter-event times
+    σ: the standard deviation of τ
+    τ_bar: 〈τ〉, the mean of τ
+    r: σ/τ_bar, the coefficient of variation
+    B: burstiness parameter, ≔ (r - 1)/(r + 1) = (σ - τ_bar)/(σ + τ_bar)
+    Alt:
+    n = number of events in τ
+    B_n: burstiness parameter with a correction for finite sample size
+         ((√(n + 1)*r) - √(n - 1))/(((√(n + 1) - 2)*r)   + √(n - 1))
+    """
+    r = np.std(data)/np.mean(data)
+    n = len(data)
+
+    if finite:
+        B = ((np.sqrt(n + 1)*r) - np.sqrt(n - 1))/(((np.sqrt(n + 1) - 2)*r) + np.sqrt(n - 1))
+    else:
+        B = (r - 1)/(r + 1)
+
+    return B
+
+def memory_coef(data, m = 1):
+    """
+    Return the memory coefficient, M, from a series of inter-event times. Depends on m, the the "lag" in the memory, representing m-1 intermediate events.
+    Ref is Karsai et al 2018, "Bursty Human Dynamics."
+    M: the memory coefficient
+    m: the "lag"
+    τ, τ_bar, σ, and n as for bursty_coef().
+    There is both a τ_1 and a τ_2, and corresponding values, separated by m
+    """
+    data = list(data)
+    n = len(data)
+    unlagged = data[:n-m]
+    tau1bar = np.mean(unlagged)
+    sigma1 = np.std(unlagged)
+    lagged = data[m:]
+    tau2bar = np.mean(lagged)
+    sigma2 = np.std(lagged)
+
+    try:
+        norm = 1/(n - m - 1)
+    except:
+        M = np.nan
+        return M
+    
+    summation = []
+    for i in range(n - m): # n - m - 1
+        numerator = (unlagged[i] - tau1bar)*(lagged[i] - tau2bar)
+        denominator = sigma1*sigma2
+        summation.append(numerator/denominator)
+        
+    M = norm*sum(summation)
+    
+    return M
+
+##########################
+## ABM Helper Functions ##
+##########################
+
+def Y_to_X(Y, ns):#(Y, R, ns):
+    """
+    Take the simulation output, Y, and convert it into a pd.DataFrame, X, for further analysis.
+    """
+    X = []
+    for n in ns:
+        # gID = R
+        # pID = n # pID = R + str(n)
+        curr = 0 # current state
+        last = 0 #last state
+        dur = 0
+        begin = 0
+
+        #for t in range(len(Y[n])):
+        for t in range(len(Y)):
+            #curr = Y[n][t] # could this just change to Y[t, n]?
+            curr = Y[t, n]
+            if curr == 1:
+                if last == 1:
+                    dur += 1
+                else:#elif: last == 0:
+                    begin = t
+            else:#elif curr == 0:
+                if last == 1:
+                    dur += 1
+                    #row = (R, n, begin, dur) # why am I doing this? R must be a group marker
+                    # better to keep the group and X as separate constructs
+                    # can use a dict set up instead
+                    row = (n, begin, dur)
+                    X.append(row)
+                    begin = 0
+                    dur = 0
+                else:#elif last == 0:
+                    continue
+            last = curr
+    X = pd.DataFrame(X, columns = ['pID', 'begin', 'dur'])#['gID', 'pID', 'begin', 'dur'])
+    
+    X['end'] = X['begin'] + X['dur']
+    X['lat'] = np.nan
+
+    #_gID = list(X).index('gID')
+    _pID = list(X).index('pID')
+    _begin = list(X).index('begin')
+    _end = list(X).index('end')
+    _dur = list(X).index('dur')
+    _lat = list(X).index('lat')
+
+    for i in range(len(X.index)):
+        if X.iloc[i, _pID] != X.iloc[i - 1, _pID]:
+            X.iloc[i, _lat] = X.iloc[i, _begin]
+        else:
+            X.iloc[i, _lat] = X.iloc[i, _begin] - X.iloc[i - 1, _begin]
+
+    return X

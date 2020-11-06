@@ -1,5 +1,5 @@
 # interruption-networks
-Data handling, analysis, and simulation files for working with interruption networks. A work in progress.
+Data handling, analysis, and simulation files for working with interruption networks.
 
 ---
 
@@ -15,4 +15,4 @@ The working data for this study can be downloaded from Binghamton University's [
 
 The original diarizations were done using [ELAN](https://archive.mpi.nl/tla/elan).
 
-Analysis and simulations are done in Python 3, relying on the following packages: `numpy`, `pandas`, `matplotlib`, `statsmodels`, and `networkx`.
+Analysis and simulations are done in Python 3, relying on the following packages: `numpy`, `pandas`, `matplotlib`, `statsmodels`, and `networkx`. ERGM analysis uses R 4.0.3 and the `statnet` and `tidyverse` package families, as well as `igraph` and `intergraph`. 

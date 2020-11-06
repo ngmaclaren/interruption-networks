@@ -1,3 +1,4 @@
+library(tidyverse)
 library(statnet)
 
 loc <- './data/votenets/'
