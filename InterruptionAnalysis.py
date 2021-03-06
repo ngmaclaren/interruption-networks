@@ -8,6 +8,15 @@ import networkx as nx
 import statsmodels.api as sm
 from statsmodels.formula.api import ols
 
+import scipy.stats as stats
+from scipy.stats._continuous_distns import _distn_names
+from scipy.special import rel_entr
+import statsmodels.api as sm
+
+import matplotlib.pyplot as plt
+from matplotlib.collections import LineCollection
+
+
 def collect_vocalization_sequence(datafile, loc = './data/diarizations/', ext = 'pl.eaf'):
     """
     Given the ELAN diarization files, this function returns a pd.DataFrame with two cols, 'start' and 'dur'. Two further cols, 'gID' and 'pID', identify the speakers.
@@ -59,7 +68,7 @@ def lines_transform(data):
 
 def directed_horizontal_visibility_graph(data):
     """
-    From Lacasa et al 2012. Data needs to have data['begin'] and data['dur'].
+    From Lacasa et al 2012. Data needs to have data['begin'] and data['dur']. Nodes will be named by the start time of the speaking event.
     """
     edges = []
     lines = lines_transform(data) #[[(i, 0), (i, j)] for i, j in zip(data.begin, data.dur)]
@@ -89,7 +98,7 @@ def directed_horizontal_visibility_graph(data):
 
 def kullback_leibler_divergence(g):
     """
-    Given a directed horizontal visibility graph (doesn't currently test for that...), return the Kullback-Leibler divergence between the out-degree probability distribution (forward in time) and the in-degree probability distribution (backward in time)
+    Given a directed horizontal visibility graph (doesn't currently test for that...), return the Kullback-Leibler divergence between the out-degree probability distribution (forward in time) and the in-degree probability distribution (backward in time). This function is specifically for dealing with directed horizontal visibility graphs and doesn't generalize. Keeping the name for now for backwards compatibility. The more general function, based on SciPy's rel_entropy(), is get_kld().
     """
     in_degree_sequence = sorted([d for n, d in g.in_degree])
     in_degree_count = dict(collections.Counter(in_degree_sequence))
@@ -117,7 +126,7 @@ def kullback_leibler_divergence(g):
 #### Markov Analysis Functions ####
 ###################################
 
-def get_transition_matrix(data, x): #where ~x~ is a pID ####### should be ~r~ to be consistent
+def get_transition_matrix(data, x, ignore_simultaneous = False): #where ~x~ is a pID ####### should be ~r~ to be consistent
     """
     For a given data frame ~data~, return the Markov transition probability matrix associated with group member ~x~. ~data~ should have the columns 'pID', 'gID', 'begin', 'end', and 'dur'. 
     Let u_X be the number of distinct speaking events coded for participant X.
@@ -126,12 +135,30 @@ def get_transition_matrix(data, x): #where ~x~ is a pID ####### should be ~r~ to
 from\to  A      B
 A        P(A|A) P(B|A)
 B        P(A|B) P(B|B)
+which translates to:
 
+  AA AB  -->  [0, 0]  [0, 1]
+  BA BB       [1, 0]  [1, 1]
+    If ignore_simultaneous = True, remove all interruptive and non-interruptive simultaneous speech from consideration.
     """
     gID = list(data[data['pID'] == x]['gID'])[0]
     grpdata = data[data['gID'] == gID]
     X = data[data['pID'] == x]
 
+    if ignore_simultaneous:
+        pIDs = pd.unique(grpdata['pID'])
+        interruptions = interruptive_simultaneous_speech(data, pIDs)
+        interjections = non_interruptive_simultaneous_speech(data, pIDs)
+        ξ = interruptions[interruptions['i'] == x]
+        ζ = interjections[interjections['j'] == x]
+        X = X[~(X['begin'].isin(ξ['begin'])) & ~(X['begin'].isin(ζ['begin']))]
+
+    if X.empty:
+        P = np.full((2, 2), np.nan)
+        return P
+                                        # These are actually correct, according to the P(B|A) notation
+                                        # Downstream files use the translation to AA, AB, etc.
+                                        # and the accompanying NumPy array slicing. 
     u_X = len(X)
     N_B = sum(X['dur'])
     N_A = max(grpdata['end']) - N_B
@@ -155,7 +182,7 @@ B        P(A|B) P(B|B) P(C|B)
 C        P(A|C) P(B|C) P(C|C)
     """
     gID = list(data[data['pID'] == x]['gID'])[0]
-    grpdata = data[data['gID'] == gID]
+    grpdata = data[data['gID'] == gID].sort_values('begin', ignore_index = True)
     pIDs = pd.unique(grpdata['pID'])
     X = data[data['pID'] == x]
     nox = grpdata[-(grpdata['pID'].isin([x]))]
@@ -181,7 +208,19 @@ C        P(A|C) P(B|C) P(C|C)
     u_nox_ξ = len(nox_ξ)
     u_nox_ζ = len(nox_ζ)
     N_C = sum(X['dur'])
-    N_B = sum(nox['dur'])
+    #N_B = sum(nox['dur'])
+    N_B = 0
+    for i in range(len(nox)): # i think this needs to be nox
+        if i == 0:
+            N_B += nox.loc[i, 'dur']
+        else:
+            before = nox[nox.index < i]
+            if nox.loc[i, 'begin'] < max(before['end']):
+                overlap = max(before['end']) - nox.loc[i, 'begin']
+                N_B += nox.loc[i, 'dur'] - overlap
+            else:
+                N_B += nox.loc[i, 'dur']
+
     N_A = T - N_B - N_C
 
     # some of these are yielding numbers outside [0,1]
@@ -215,7 +254,7 @@ C        P(A|C) P(B|C) P(C|C)
     P_BB = 1 - (P_CB + P_AB)
 
     #P_BC = u_ζ/N_C
-    P_BC = (len(pd.unique(ζp['begin'])) + len(pd.unique(ξp['begin'])))/N_C
+    P_BC = (len(pd.unique(ζ['begin'])) + len(pd.unique(ξp['begin'])))/N_C # ζp['begin']
     #P_AC = (u_x - u_ζ)/N_C # this will miss any cases where I start speaking during someone's turn, interrupt them, they stop, but someone else is still speaking when I stop
     P_AC = len(X[-(X['end'].isin(ζ['end']))])/N_C
     P_CC = 1 - (P_BC + P_AC)
@@ -227,54 +266,99 @@ C        P(A|C) P(B|C) P(C|C)
     
     return P
 
-def otherstate_dependent_markov(data, pID): # this could probably be cleaned up a little now
-     """
-     For a given data frame ~data~, return the Markov transition probability matrices associated with group member ~x~. ~data~ should have the columns 'pID', 'gID', 'start', 'end', and 'dur'. In this case, there is a hard-coded pair of state sets: a 'perceptual' state of 'someone else is talking/not talking' and a 'self' state of 'talking/not talking'.
-     """
-     gID = list(data[data['pID'] == pID]['gID'])[0]
-     data = data[data['gID'] == gID]
-     pIDs = pd.unique(data['pID']) 
-     x = data[data['pID'] == pID]
-     nox = data[data['pID'] != pID]
+#def otherstate_dependent_markov(data, pID): # this could probably be cleaned up a little now
+def get_twolevel_transition_matrix(data, x):
+    
+    """
+    For a given data frame ~data~, return the Markov transition probability matrices associated with group member ~x~. ~data~ should have the columns 'pID', 'gID', 'start', 'end', and 'dur'. In this case, there is a hard-coded pair of state sets: a 'perceptual' state of 'someone else is talking/not talking' and a 'self' state of 'talking/not talking'.
+    """
+    
+    gID = list(data[data['pID'] == x]['gID'])[0]
+    grpdata = data[data['gID'] == gID].sort_values('begin', ignore_index = True)
+    pIDs = pd.unique(grpdata['pID']) 
+    X = data[data['pID'] == x]
+    nox = grpdata[-(grpdata['pID'].isin([x]))]#data[data['pID'] != pID]
 
-     interruptions = interruptive_simultaneous_speech(data, pIDs)
-     interjections = non_interruptive_simultaneous_speech(data, pIDs)
+    interruptions = interruptive_simultaneous_speech(data, pIDs)
+    interjections = non_interruptive_simultaneous_speech(data, pIDs)
+    ξ = interruptions[interruptions['i'] == x]
+    ζ = interjections[interjections['j'] == x]
+    ξp = interruptions[interruptions['j'] == x]
+    ζp = interjections[interjections['i'] == x]#overlap = ξ['dur'].sum() + ζ['dur'].sum() + ξp['dur'].sum()
+    nox_ξ = interruptions[-(interruptions['i'].isin([x]))]
+    nox_ζ = interjections[-(interjections['j'].isin([x]))]
 
-     ξ = interruptions[interruptions['i'] == pID]
-     ζ = interjections[interjections['j'] == pID]
-     ξp = interruptions[interruptions['j'] == pID]
-     overlap = ξ['dur'].sum() + ζ['dur'].sum() + ξp['dur'].sum()
+    T = max(data['end'])
 
-     T = max(data['end'])
+    N_B = X['dur'].sum()
+    N_A = T - N_B
+    # these are wrong, below:
+    #N_D = nox['dur'].sum()#- (interruptions[~interruptions.isin([pID])]['dur'].sum() + interjections[~interjections.isin([pID])]['dur'].sum())
+    #N_C = T - N_D
 
-     N_B = x['dur'].sum()
-     N_A = T - N_B
-     N_D = nox['dur'].sum()#- (interruptions[~interruptions.isin([pID])]['dur'].sum() + interjections[~interjections.isin([pID])]['dur'].sum())
-     N_C = T - N_D
+    N_D = 0
+    for i in range(len(grpdata)):
+        if i == 0:
+            N_D += grpdata.loc[i, 'dur']
+        else:
+            before = grpdata[grpdata.index < i]
+            if grpdata.loc[i, 'begin'] < max(before['end']):
+                overlap = max(before['end']) - grpdata.loc[i, 'begin']
+                N_D += grpdata.loc[i, 'dur'] - overlap
+            else:
+                N_D += grpdata.loc[i, 'dur']
+    N_C = T - N_D
+    print(x)
+    print(ξ)
+    print(ζ)
+    print([N_A, N_B, N_C, N_D])
 
-     # there are errors if there is no overlap
-     P_BAC = (len(x) - (len(ξ) + len(ζ)))/(T - N_B - N_D)#(N_C - N_B)
-     P_AAC = 1 - P_BAC
-     P_ABC = (len(x) - len(ξp))/(N_B - overlap)#(N_C + N_B - (ξ['dur'].sum() + ζ['dur'].sum()))
-     P_BBC = 1 - P_ABC
-     PC = np.array([
-         [P_AAC, P_BAC],
-         [P_ABC, P_BBC]
-     ])
-     P_BAD = (len(ξ) + len(ζ))/(N_D - overlap)#(N_D - (ξ['dur'].sum() + ζ['dur'].sum()))
-     P_AAD = 1 - P_BAD
-     try:
-         P_ABD = len(ξp)/(overlap)#(N_D + (ξ['dur'].sum() + ζ['dur'].sum()))
-     except:
-         P_ABD = np.nan
-     
-     P_BBD = 1 - P_ABD
-     PD = np.array([
-         [P_AAD, P_BAD],
-         [P_ABD, P_BBD]
-     ])
+    P_ABC = np.nan
+    P_BBC = np.nan
 
-     return [PC, PD]
+    P_BAC = len(X[-(X['begin'].isin(ξ['begin']) | X['begin'].isin(ζ['begin']))]['begin']) / N_A
+    P_AAC = 1 - P_BAC
+
+    P_BAD = len(pd.unique(ξ['begin']))/(N_D - X['dur'].sum())
+    P_AAD = 1 - P_BAD
+
+    P_ABD = len(pd.unique(ζ['begin']))/(X['dur'].sum())
+    P_BBD = 1 - P_ABD
+
+    # Monday, November 23, 2020
+    # there are negative numbers in BAC, ABC, BBC, and BBD
+    # I believe this is because there are double counts in ξ and ζ
+    # The trick I used above was to use pd.unique.
+    # Study the threestate solution, and implement something similar that makes sense here.
+    # P_BAC = (len(x) - (len(ξ) + len(ζ)))/(T - N_B - N_D)#(N_C - N_B)
+    # P_AAC = 1 - P_BAC
+    #  try:
+    #      P_ABC = (len(x) - len(ξp))/(N_B - overlap)#(N_C + N_B - (ξ['dur'].sum() + ζ['dur'].sum()))
+    #      P_BBC = 1 - P_ABC
+    #  except:
+    #      P_ABC = np.nan
+    #      P_BBC = np.nan
+
+    PC = np.array([
+        [P_AAC, P_BAC],
+        [P_ABC, P_BBC]
+    ])
+
+    # P_BAD = (len(ξ) + len(ζ))/(N_D - overlap)#(N_D - (ξ['dur'].sum() + ζ['dur'].sum()))
+    # P_AAD = 1 - P_BAD
+    # try:
+    #     P_ABD = len(ξp)/(overlap)#(N_D + (ξ['dur'].sum() + ζ['dur'].sum()))
+    #     P_BBD = 1 - P_ABD
+    # except:
+    #     P_ABD = np.nan
+    #     P_BBD = np.nan
+
+    PD = np.array([
+        [P_AAD, P_BAD],
+        [P_ABD, P_BBD]
+    ])
+
+    return [PC, PD]
 
 # def g_n_dependent_markov(data, pID):
      # the idea here is going to be to make the calculations for otherstate_dependent_markov(), above, be recalculated for each other g_n. There will be lots of NA values. For this function and the one above, the except clause shouldn't assign P_ABD as np.nan, but rather as the corresponding value for no one talking, P_ABC---right? Or just shut off? No, I think P_ABC, because it's not that the interruption couldn't happen, it's that we didn't observe it.
@@ -305,6 +389,19 @@ def get_wcc(g):
     largest_wcc = list(sorted(wccs, key = lambda x: len(x), reverse = True)[0])
     wcc = g.subgraph(largest_wcc)
     return wcc
+
+# def indegree_centralization(g):
+#     """
+#     Find the in-degree centralization for a graph. Assumes a DiGraph with an edge attribute called 'weight'.
+#     Following Sauer & Kauffeld, who use the standard formula.
+#     """
+#     idc = dict(g.in_degree(weight = 'weight')).values()
+#     max_idc = max(idc)
+#     numerator = sum([max_idc - idc[i] for i in idc])
+#     denominator = 
+#     C = 
+#     return C
+    
 
 #################################################
 #### Interruption Network Analysis Functions ####
@@ -339,6 +436,22 @@ def pagerank_centralization(g, alpha = 0.85, weight = None):
 
     return centralization
 
+def in_degree_centralization(g, weight = None):
+    """
+    """
+    h = nx.DiGraph()
+    h.add_edges_from([(n, len(g)) for n in range(len(g))])
+    idc_h = dict(h.in_degree())
+    idc_h_max = max(idc_h.items(), key = lambda x: x[1])[1]
+
+    idc = dict(g.in_degree(weight = weight))
+    idc_max = max(idc.items(), key = lambda x: x[1])[1]
+
+    H = sum([idc_h_max - idc_h[i] for i in idc_h.keys()])
+
+    centralization = sum([idc_max - idc[i] for i in idc.keys()])/H
+
+    return centralization
 ################################
 #### Other Helper Functions ####
 ################################
@@ -412,15 +525,52 @@ def icc1(X, model, k):
     
     ICC1 = (MSR - MSE) / (MSR + k*MSE)
 
-    return ICC1
+    return ICC1.item()
+
+def get_kld(dat, ref, dist_name, bins = 75):
+    """
+    Find the Kullback-Leibler divergence from ~ref~ to ~dat~ using SciPy's rel_entr() function. A hypothesized distribution is required, as this function fits bot the ref and the data to the same probability distribution (fitted separately): ~dist_name~ should be one of SciPy's probability distributions (https://docs.scipy.org/doc/scipy/reference/stats.html).
+    """
+    dist = getattr(stats, dist_name)
+    
+    y, x = np.histogram(ref, bins = bins)
+    x = (x + np.roll(x, -1))[:-1] / 2.0
+    #y = y/np.sum(y)
+
+    d_params = dist.fit(dat)
+    d_args = d_params[:-2]
+    d_loc = d_params[-2]
+    d_scale = d_params[-1]
+    dpdf = dist.pdf(x, loc = d_loc, scale = d_scale, *d_args)
+
+    r_params = dist.fit(ref)
+    r_args = r_params[:-2]
+    r_loc = r_params[-2]
+    r_scale = r_params[-1]
+    rpdf = dist.pdf(x, loc = r_loc, scale = r_scale, *r_args)
+       
+    # dw = dist.fit(dat) # returns params
+    # rw = dist.fit(ref)
+
+    # dpdf = dist.pdf(x, c = dw[0], loc = dw[1], scale = dw[2])
+    # rpdf = dist.pdf(x, c = rw[0], loc = rw[1], scale = rw[2])
+
+    dy = dpdf/np.sum(dpdf)
+    ry = rpdf/np.sum(rpdf)
+
+    return sum(rel_entr(dy, ry))
+
 
 #####################################
 #### Network Generator Functions ####
 #####################################
 
+# Note for all interruption networks the 'j' and 'i' may seem backwards: they are based on the idea that 'i' interrupts 'j', so the edge in an interruption goes from 'j' to 'i'. "Unsuccessful" interruptions were labeled accordingly: the edge still goes from 'j' to 'i', but the action now also goes from 'j' to 'i'.
+# TODO: add the disconnected... syntax to each network constructor.
+
 def contact_sequence(data, pIDs):
     """
-    Given a pd.DataFrame with variables ['gID', 'pID', 'begin', 'end'], generate a contact sequence of events (j, i, t) where j is the group member being interrupted, i is the group member doing the interrupting, and t is the start time of the interruptive speech.
+    Given a pd.DataFrame with variables ['gID', 'pID', 'begin', 'end'], generate a contact sequence of events (j, i, t) where j is the group member being interrupted, i is the group member doing the interrupting, and t is the start time of the interruptive speech. Ignores non-interruptive simultaneous speech.
     Ref: Holme & Saramäki (2012)
     """
     C = []
@@ -446,7 +596,7 @@ def contact_sequence(data, pIDs):
 
 def interruptive_simultaneous_speech(data, pIDs):
     """
-    Given a pd.DataFrame with variables ['gID', 'pID', 'begin', 'end'], generate an interval sequnce of events (j, i, t, t') where j is the group member being interrupted, i is the group member doing the interrupting, t is the start time of the interruptive speech, and t' is the end time of the interruptive speech. 
+    Given a pd.DataFrame with variables ['gID', 'pID', 'begin', 'end'], generate an interval sequnce of events (j, i, t, t') where j is the group member being interrupted, i is the group member doing the interrupting, t is the start time of the interruptive speech, and t' is the end time of the interruptive speech. Needs to be sorted by group first. 
     ? Returns a data frame.
     Refs: Feldstein & W___ (1987), Holme & Saramäki (2012). This algorithm accepts overlapping edges, which Holme & Saramäki do not consider.
     """
@@ -489,7 +639,7 @@ def interruptive_simultaneous_speech(data, pIDs):
 
 def non_interruptive_simultaneous_speech(data, pIDs):
     """
-    Given a pd.DataFrame with variables ['gID', 'pID', 'begin', 'end'], generate an interval sequnce of events (j, i, t, t') where j is the group member being interjected, i is the group member doing the interjective, t is the start time of the non-interruptive speech, and t' is the end time of the non-interruptive speech. 
+    Given a pd.DataFrame with variables ['gID', 'pID', 'begin', 'end'], generate an interval sequnce of events (j, i, t, t') where j is the group member being interjected, i is the group member doing the interjective, t is the start time of the non-interruptive speech, and t' is the end time of the non-interruptive speech. Needs to be sorted by group first.
     ? Returns a data frame.
     Refs: Feldstein & W___ (1987), Holme & Saramäki (2012). This algorithm accepts overlapping edges, which Holme & Saramäki do not consider.
     """
@@ -563,7 +713,57 @@ def interruption_network(C, pIDs):
         inet.add_node(pID)
     inet.add_weighted_edges_from(interruption_edges)
     return inet
-        
+
+def interruption_network_pandas(data, pIDs, use = 'iss'):
+    """
+    Given a data frame with variables ['gID', 'pID', 'begin', 'end'], generate an interruption network. 
+    Default is interruptions only. For a network based on non-interruptive simultaneous speech only, use 'nss'. Use 'both' to include both.
+    Not yet implemented: retain the counts of 'iss' and 'nss' in the edge characteristics and track the total count of both in the node characteristics.
+    """
+    ξ = interruptive_simultaneous_speech(data, pIDs)
+    ζ = non_interruptive_simultaneous_speech(data, pIDs)
+
+    #print(len(ξ))
+    #print(sum(list(dict(nx.get_edge_attributes(og, 'weight')).values())))
+
+    iss = ξ.groupby(['j', 'i']).agg(
+        weight = pd.NamedAgg(column = 'begin', aggfunc = "count"))
+    iss.reset_index(inplace = True)
+
+    nss = ζ.groupby(['j', 'i']).agg(
+        weight = pd.NamedAgg(column = 'begin', aggfunc = "count"))
+    nss.reset_index(inplace = True)
+
+    if use == 'iss':
+        g = nx.from_pandas_edgelist(iss, source = 'j', target = 'i', edge_attr = 'weight', create_using = nx.DiGraph)
+        disconnected = [pID for pID in pIDs if pID not in list(g.nodes)]
+        g.add_nodes_from(disconnected)
+        return g
+    
+    elif use == 'nss':
+        g = nx.from_pandas_edgelist(nss, source = 'j', target = 'i', edge_attr = 'weight', create_using = nx.DiGraph)
+        disconnected = [pID for pID in pIDs if pID not in list(g.nodes)]
+        g.add_nodes_from(disconnected)
+        return g
+    
+    elif use == 'both':
+        dat = pd.concat([iss, nss], ignore_index = True)
+        subset = ['j', 'i']
+        duplicates = dat[dat.duplicated(subset = subset)]
+        dat.drop_duplicates(subset = subset, inplace = True)
+        for d in duplicates.index:
+            for o in dat.index:
+                if duplicates.loc[d, 'j'] == dat.loc[o, 'j'] and duplicates.loc[d, 'i'] == dat.loc[o, 'i']:
+                    dat.loc[o, 'weight'] += duplicates.loc[d, 'weight']
+
+        g = nx.from_pandas_edgelist(dat, source = 'j', target = 'i', edge_attr = 'weight', create_using = nx.DiGraph)
+        disconnected = [pID for pID in pIDs if pID not in list(g.nodes)]
+        g.add_nodes_from(disconnected)
+        return g
+    
+    else:
+        print('Use one of "iss", "nss", or "both".')
+
 def vote_network(data, pIDs, vote_cols, self_loops = False):
     """
     Given a set of participants, ~pIDs~, and a set of columns containing directed vote data, ~vote_cols~, return a directed "vote network," sometimes called a "leadership network."
@@ -592,7 +792,46 @@ def vote_network(data, pIDs, vote_cols, self_loops = False):
     
     vnet.add_edges_from(vnet_edgelist)
 
-    return vnet    
+    return vnet
+
+def turn_based_network(data, pIDs):
+    """
+    Given a pd.DataFrame with variables ['gID', 'pID', 'begin', 'end'], generate a "turn-based" (my term for Sauer & Kauffeld's proposed network representation of a conversation) network of the conversation.
+    Ref: Sauer & Kauffeld (2013)
+    """
+    data = data[data['pID'].isin(pIDs)]
+    
+    interruptions = interruptive_simultaneous_speech(data, pIDs)
+    interjections = non_interruptive_simultaneous_speech(data, pIDs)
+    # Sauer & Kauffeld drop simultaneous speech from consideration
+    data = data[~(data['begin'].isin(interruptions['begin'])) &
+                ~(data['begin'].isin(interjections['begin']))]
+
+    data.sort_values(by = 'begin', inplace = True, ignore_index = True)
+
+    towhom = [np.nan] * len(data)
+    #np.full(shape = (len(data), 1), fill_value = np.nan, dtype = object)
+    for i in data.index[:-1]:
+        towhom[i] = data.loc[i + 1, 'pID']
+    data['towhom'] = towhom
+
+    wtw = np.full(shape = (len(pIDs), len(pIDs)), fill_value = 0)
+    wtw = pd.DataFrame(wtw, columns = pIDs, index = pIDs)
+
+    for i in data.index[:-1]:
+        who = data.loc[i, 'pID']
+        whom = data.loc[i, 'towhom']
+        wtw.loc[who, whom] += 1
+
+    # Successive speaking events from the same speaker are considered part of the same turn
+    for i, j in zip(wtw.index, list(wtw)):
+        if i == j:
+            wtw.loc[i, j] = 0
+
+    g = nx.from_pandas_adjacency(wtw, create_using = nx.DiGraph)
+
+    return g
+
 ############################################
 #### Random Network Generator Functions ####
 ############################################
@@ -772,8 +1011,13 @@ def bursty_coef(data, finite = True):
     r = np.std(data)/np.mean(data)
     n = len(data)
 
-    if finite:
-        B = ((np.sqrt(n + 1)*r) - np.sqrt(n - 1))/(((np.sqrt(n + 1) - 2)*r) + np.sqrt(n - 1))
+    if n < 3:
+        B = np.nan
+    elif finite:
+        numerator = (np.sqrt(n + 1)*r) - np.sqrt(n - 1)
+        denominator = ((np.sqrt(n + 1) - 2)*r) + np.sqrt(n - 1)
+        B = numerator/denominator
+        #B = ((np.sqrt(n + 1)*r) - np.sqrt(n - 1))/(((np.sqrt(n + 1) - 2)*r) + np.sqrt(n - 1))
     else:
         B = (r - 1)/(r + 1)
 
@@ -790,10 +1034,15 @@ def memory_coef(data, m = 1):
     """
     data = list(data)
     n = len(data)
-    unlagged = data[:n-m]
+
+    if n < m + 3:
+        M = np.nan
+        return M
+    
+    unlagged = data[:n-m-1]
     tau1bar = np.mean(unlagged)
     sigma1 = np.std(unlagged)
-    lagged = data[m:]
+    lagged = data[m:-1]
     tau2bar = np.mean(lagged)
     sigma2 = np.std(lagged)
 
@@ -804,7 +1053,7 @@ def memory_coef(data, m = 1):
         return M
     
     summation = []
-    for i in range(n - m): # n - m - 1
+    for i in range(n - m - 1): # n - m - 1
         numerator = (unlagged[i] - tau1bar)*(lagged[i] - tau2bar)
         denominator = sigma1*sigma2
         summation.append(numerator/denominator)
@@ -871,3 +1120,46 @@ def Y_to_X(Y, ns):#(Y, R, ns):
             X.iloc[i, _lat] = X.iloc[i, _begin] - X.iloc[i - 1, _begin]
 
     return X
+
+#############################
+## Visualization Functions ##
+#############################
+
+solarized = {# https://ethanschoonover.com/solarized/
+    'base03': '#002b36', 'base02': '#073642', 'base01': '#586e75', 'base00': '#657b83',
+    'base0': '#839496', 'base1': '#93a1a1', 'base2': '#eee8d5', 'base3': '#fdf6e3',
+    'yellow': '#b58900', 'orange': '#cb4b16', 'red': '#dc322f', 'magenta': '#d33682',
+    'violet': '#6c71c4', 'blue': '#268bd2', 'cyan': '#2aa198', 'green': '#859900'}
+
+def visualize_speaking_data(data, cond, gID, rep = None, ax = None, colors = 'k'):
+    """
+    Generate a plot that uses horizontal bars to represent periods of time when group members (or agents) are speaking. Plotting set up like plt.subplots() and plt.show() should be done outside of the function.
+    """
+    figdat = data[(data['type'] == cond) &
+                  (data['gID'] == gID)]
+    if rep:
+        figdat = figdat[figdat['rep'] == rep]
+        
+    pIDs = pd.unique(figdat['pID'])
+
+    b, c = .25, 0
+    yticks = []
+    for pID in pIDs:
+       dat = figdat[figdat['pID'] == pID].sort_values(['begin'])
+       lines = [[(i, b), (j, b)] for i, j in zip(dat['begin'], dat['end'])]
+       lc = LineCollection(lines, linewidths = 10, colors = colors, label = pID) # colors[c]
+       ax.add_collection(lc)
+       
+       yticks.append(b)
+       b += 0.25
+       if dat.empty:
+           continue
+       c += 1
+
+    ax.set_xlim([0, max(data['end']) + 5])
+    ax.set_ylim([0, b])
+    ax.set_yticks(yticks)
+    ax.set_yticklabels(pIDs)
+    ax.set_xlabel('t (seconds)')
+    ax.set_ylabel('Group Member')
+    ax.set_title(cond.capitalize())

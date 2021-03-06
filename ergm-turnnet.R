@@ -1,35 +1,23 @@
 library(statnet)
 set.seed(12345)
 
-### Uncomment one
-loc <- './data/networks-iss/'
-## loc <- './data/networks-nss/'
-## loc <- './data/networks-both/'
+loc <- './data/turnnets/'
 
 ext <- '.gml'
 graph_files <- list.files(loc, pattern = paste0(ext, "$"))
-##graph_files <- graph_files[grep(ext, graph_files)]
 graphs <- list()
 for (file in graph_files) {
     file_loc <- paste(loc, file, sep = "")
     g <- igraph::read_graph(file_loc, format = gsub("\\.", "", ext))
     g <- intergraph::asNetwork(g)
     gID <- gsub(ext, "", file)
-    network::set.vertex.attribute(g, 'gID', gID)
+    set.vertex.attribute(g, 'gID', gID)
     graphs[[gID]] <- g
 }
 
                                         # By-hand correction
-                                        # igraph will not import the try int(); except str() solution for "age" that worked in NetworkX
-                                        # removed age as node attribute in generate-networks.py
+                                        # For explanation, see ergm-interruptnet.R
 ##set.vertex.attribute(graphs[["XSP"]], "age", NA, 6) # "XSP07"
-##delete.vertices(graphs[["XSP"]], 6) # to use age
-
-### Isolated nodes appear to have an effect on ERGM results. To recover significance for the `mutual` coefficient, remove isolates:
-## for (i in 1:length(graphs)) {
-##     isolates <- get.vertex.attribute(graphs[[i]], "vertex.names")[which(has.edges(graphs[[i]]) == FALSE)]
-##     delete.vertices(graphs[[i]], isolates)
-## }
 
 sm_list <- list()
 node_attr_list <- list()
@@ -107,13 +95,6 @@ set.vertex.attribute(mmg, 'extra', node_attr$extra)
 #### nodeicov('tst'), nodeocov('tst')
 #### nodemix('gender') instead of nodematch('gender')
 
-## Ok.
-## Need to redo the AIC analysis, including the node attributes for ESL and ISOP.
-## Justification for including these and no others are that these are obvious, salient features
-## that may play into the probability that someone may interrupt someone else. 
-## Intelligence is not obvious, although perhaps it too should be included.
-## And the game knowledge score. Shit.
-
 ## bigmodel <- ergm(
 ##     mmg ~ sum + mutual +
 ##         ##diff('tst', dir = 'h-t') +
@@ -132,11 +113,11 @@ set.vertex.attribute(mmg, 'extra', node_attr$extra)
 ##         nodeocov('open') + nodeocov('extra') +
 ##         nodeofactor('gender') + nodeofactor('esl') + nodeofactor('isop') +
 ##         ##nodeofactor('inst')## + nodeofactor('sim')
-##         nodematch('gender') + nodematch('esl') # diff() or absdiff() on 'intel' or 'gameknowl' etc.
+##         nodematch('gender') + nodematch('esl')
 ##    ,
 ##     coef = -1, reference = ~ DiscUnif(0, 10),
 ##     response = 'weight', constraints = ~ blockdiag('gID'))
-## summary(bigmodel)$aic # old -5389.614; with nodematch stats -5384.146
+##summary(bigmodel)$aic
 ## coefs <- summary(bigmodel)$coefs
 ## coefs <- coefs[order(coefs[4]),]
 ## coefs$alpha <- 0.05/(nrow(coefs) + 1 - seq(1, nrow(coefs)))
@@ -183,11 +164,11 @@ bigmodel_triads <- ergm(
         nodeocov('open') + nodeocov('extra') +
         nodeofactor('gender') + nodeofactor('esl') + nodeofactor('isop') +
         ##nodeofactor('inst')## + nodeofactor('sim')
-        nodematch('gender') + nodematch('esl') # diff() or absdiff() on 'intel' or 'gameknowl' etc.
+        nodematch('gender') + nodematch('esl')
    ,
     coef = -1, reference = ~ DiscUnif(0, 10),
     response = 'weight', constraints = ~ blockdiag('gID'))
-summary(bigmodel_triads) # 
+summary(bigmodel_triads)
 ## m1 <- ergm(
 ##     mmg ~ sum + mutual,
 ##     coef = -1, reference = ~ DiscUnif(0, 10),
@@ -210,24 +191,11 @@ summary(bigmodel_triads) #
 ##     response = 'weight', constraints = ~ blockdiag('gID'))
 ## m5 <- ergm(
 ##     mmg ~ sum + mutual +
-##         diff('tst', dir = 'h-t') +
-##         nodeicov('tst') +
+##         diff('tst', dir = 'h-t') + nodeicov('tst') +
 ##         nodematch('gender') +
 ##         nodeifactor('gender') + nodeofactor('gender'),
 ##     coef = -1, reference = ~ DiscUnif(0, 10),
 ##     response = 'weight', constraints = ~ blockdiag('gID'))
-## m6 <- ergm(
-##     mmg ~ sum + mutual +
-##         ##diff('tst', dir = 'h-t') +
-##         nodeicov('tst') +
-##         nodeocov('tst') + 
-##         nodematch('gender') +
-##         nodeifactor('gender') + nodeofactor('gender'),
-##     coef = -1, reference = ~ DiscUnif(0, 10),
-##     response = 'weight', constraints = ~ blockdiag('gID'))
-## salientmodel <- ergm(
-##     mmg ~ sum + mutual +
-        
 ## notst <- ergm(
 ##     mmg ~ sum + mutual +
 ##         nodematch('gender') +
