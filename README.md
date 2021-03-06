@@ -19,6 +19,7 @@ With the above files and directory structure, run `collect-ts-data.py` to produc
 
 From this point, you can run `generate-networks.py` to make a set of interruption networks, turn-based networks (see Sauer & Kauffeld, 2013), and vote networks (also called "leadership networks", see Carter et al., 2015). Analysis files depend on these networks.
 
+The file `analysis-2SLS-extended-v5.do` runs an accompanying 2SLS analysis. 
 <!-- - `InterruptionAnalysis.py` contains the functions needed for the data collection and analysis steps used in this project. -->
 <!-- - `collect-ts-data.py` transforms the diarization files into a `pandas` DataFrame that contains the group ID ('gID') and participant ID ('pID'); beginning ('begin') and ending ('end') time, in milliseconds, for each vocalization; and two calculated columns for the duration of each vocaliation ('dur') and the "latency" ('lat') for each vocalization for inter-event time analysis. -->
 <!-- - `interruption-network-example.py` produces example interruption and vote networks for analysis. -->
