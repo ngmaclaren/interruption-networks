@@ -122,6 +122,34 @@ def kullback_leibler_divergence(g):
 
     return D
 
+def dhvg_local_clustering(g, v, direction):
+    """
+    Ref: Donges et al (2013)
+    """
+    # this only works because the node labels are integers whose order makes sense
+    if direction == "forward":
+        nbr = sorted(list(g.successors(v)))
+    elif direction == "backward":
+        nbr = sorted(list(g.predecessors(v)))
+
+    deg = len(nbr)
+
+    if deg < 2:
+        c = 0
+        return c
+    else:
+        count = 0
+        for j in nbr:
+            jnbr = list(g.successors(j))
+            for k in nbr:
+                if k in jnbr:
+                    count += 1
+
+        denominator = comb(deg, 2)
+        c = count/denominator
+        return c
+
+
 ###################################
 #### Markov Analysis Functions ####
 ###################################
@@ -1102,7 +1130,7 @@ def Y_to_X(Y, ns):#(Y, R, ns):
                     continue
             last = curr
     X = pd.DataFrame(X, columns = ['pID', 'begin', 'dur'])#['gID', 'pID', 'begin', 'dur'])
-    
+
     X['end'] = X['begin'] + X['dur']
     X['lat'] = np.nan
 
@@ -1114,7 +1142,7 @@ def Y_to_X(Y, ns):#(Y, R, ns):
     _lat = list(X).index('lat')
 
     for i in range(len(X.index)):
-        if X.iloc[i, _pID] != X.iloc[i - 1, _pID]:
+        if X.iloc[i, _pID] != X.iloc[i - 1, _pID] or i == 0:
             X.iloc[i, _lat] = X.iloc[i, _begin]
         else:
             X.iloc[i, _lat] = X.iloc[i, _begin] - X.iloc[i - 1, _begin]
@@ -1130,17 +1158,28 @@ solarized = {# https://ethanschoonover.com/solarized/
     'base0': '#839496', 'base1': '#93a1a1', 'base2': '#eee8d5', 'base3': '#fdf6e3',
     'yellow': '#b58900', 'orange': '#cb4b16', 'red': '#dc322f', 'magenta': '#d33682',
     'violet': '#6c71c4', 'blue': '#268bd2', 'cyan': '#2aa198', 'green': '#859900'}
+whiteboard = {# from the Emacs whiteboard theme
+    "Black": "#000000", "Gray40": "#666666", "Gray50": "#7F7F7F", "Gray60": "#999999", "Gray75": "#BFBFBF",
+    "Gainsboro": "#DCDCDC", "Whitesmoke": "#F5F5F5", "Green4": "#008B00", "DarkOliveGreen4": "#6E8B3D",
+    "Burlywood4": "#8B7355", "DarkOrange3": "#CD6600", "Gold3": "#CDAD00", "Blue4": "#00008B",
+    "SkyBlue1": "#00BFFF", "Red": "#FF0000"}   
 
-def visualize_speaking_data(data, cond, gID, rep = None, ax = None, colors = 'k'):
+def visualize_speaking_data(data, gID = None, pID = None, cond = None, rep = None, ax = None, colors = 'k'):
     """
     Generate a plot that uses horizontal bars to represent periods of time when group members (or agents) are speaking. Plotting set up like plt.subplots() and plt.show() should be done outside of the function.
     """
-    figdat = data[(data['type'] == cond) &
-                  (data['gID'] == gID)]
-    if rep:
-        figdat = figdat[figdat['rep'] == rep]
+    if gID:
+        figdat = data.loc[data["gID"] == gID, ]
+        pIDs = pd.unique(figdat['pID'])
+        if cond:
+            figdat = data[(data['type'] == cond) &
+                          (data['gID'] == gID)]
+        if rep:
+            figdat = figdat[figdat['rep'] == rep]
+    else:
+        figdat = data.loc[data["pID"] == pID, ]
+        pIDs = [pID]
         
-    pIDs = pd.unique(figdat['pID'])
 
     b, c = .25, 0
     yticks = []
@@ -1161,5 +1200,6 @@ def visualize_speaking_data(data, cond, gID, rep = None, ax = None, colors = 'k'
     ax.set_yticks(yticks)
     ax.set_yticklabels(pIDs)
     ax.set_xlabel('t (seconds)')
-    ax.set_ylabel('Group Member')
-    ax.set_title(cond.capitalize())
+    #ax.set_ylabel('Group Member')
+    if cond:
+        ax.set_title(cond.capitalize())
