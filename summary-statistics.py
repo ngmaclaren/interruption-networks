@@ -5,8 +5,6 @@ import matplotlib.pyplot as plt
 
 import InterruptionAnalysis as ia
 
-# From LQ: Report a correlation matrix, ideally at the item level (or at the factor level if there are too many items), with means and standard deviations (if the matrix is very large, it can be included as on-line supplementary material).
-
 data = pd.read_csv('./data/timeseries.csv', index_col = 0)
 votedata = pd.read_csv('./data/vote-data.csv')
 surveydata = pd.read_csv('./data/speakingTime-data.csv', index_col = 0)
@@ -36,7 +34,7 @@ n_pr = {}
 b_wid = {}
 b_wod = {}
 b_pr = {}
-t_wid = {} # total number of turns? close but not exact
+t_wid = {}
 t_wod = {}
 v_wid = {} # total number of votes
 v_wod = {}
@@ -85,13 +83,8 @@ surveydata["gID"] = surveydata["Group_ID"]
 # turns is not exactly equal to t_wid
 surveydata["Turns"] = data.groupby("pID")["begin"].count()
 
-# need to do some data cleaning here. NAs need to be inspected: are they missing or true zeros?
-# already taken care of for ISS and NSS
 surveydata["Turns"].fillna(0, inplace = True)
 
-# Now need to make dummies
-# Gender, English_Second_Language, Simulation, Institution, Participant_is_Operator
-# new names: d_male d_english d_simulation d_institution d_operator
 surveydata["d_male"] = surveydata["Gender"].map({"male": 1, "female": 0})
 surveydata["d_english"] = surveydata["English_Second_Language"].map({"no": 0, "yes": 1})
 surveydata["d_simulation"] = surveydata["Simulation"].map({"bct": 0, "cs": 1})
@@ -104,19 +97,14 @@ surveydata["Total_Speaking_Time"] /= 1000
 # save this data to CSV for 2SLS analysis in Stata
 surveydata.to_csv("./data/speakingTime-data-extended.csv")
 
-# Variable List:
-# ISS, NSS, Turns, TST, Votes
-# Collect also: gender, age, game knowledge, esl, operator status, conscientiousness, agreeableness, neuroticism, openness, extraversion, group size, simulation, institution
 cols = ['ISS', 'NSS', 'Turns', 'Total_Speaking_Time', 'Planning_Phase_Vote_Total',
         'd_male', 'Age', 'Game_Knowledge_Quiz', 'd_english', 'd_operator',
         'Conscientiousness', 'Agreeableness', 'Neuroticism', 'Openness', 'Extraversion',
         'Group_Size', 'd_simulation', 'd_institution']
-# To do summary statistics, need to 
+
 dat = surveydata.loc[:, cols]
 dat.corr("pearson").to_csv("./data/icorr.csv")
 
-# want a data frame that has variables as rows and the following columns:
-## mean, median, sd, min, max, ICC1
 summarystats = dat.agg([np.mean, np.median, np.std, min, max]).T
 dat["gID"] = surveydata["gID"]
 summarystats["icc1"] = np.nan
@@ -126,8 +114,6 @@ for col in cols:
     k = X.groupby("gID").count().mean()
     summarystats.loc[col, "icc1"] = ia.icc1(X, model, k)
 summarystats.to_csv("./data/i-sumstats.csv")
-
-# group
 
 size = {}
 p_female = {}
@@ -190,8 +176,6 @@ print(gdata.max())
 
 gcorr = gdata.corr('pearson')
 gcorr.to_csv('./data/gcorr-nodes.csv')
-
-# density, centralization, avg clustering, maybe avg shortest path length for ISS, NSS, Both, Turn, Vote.
 
 graphs = [igraphs, ngraphs, bgraphs, tgraphs, vgraphs]
 for G, name in zip(graphs, ['i', 'n', 'b', 't', 'v']):

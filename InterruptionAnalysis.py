@@ -633,21 +633,11 @@ def interruptive_simultaneous_speech(data, pIDs):
     data = data[data['pID'].isin(pIDs)]
     for i in range(len(data)):
         ego = data.iloc[i, :]
-        # This needs to be changed
         overlaps = data[
-            # someone interrupts me
             ((data['end'] > ego['end']) &
              (data['begin'] < ego['end']) &
-             (data['begin'] >= ego['begin'])) #|
-            # I fail to interrupt someone else ################ this needs to be in a separate df
-            #((data['begin'] <= ego['begin']) &
-            # (data['end'] >= ego['end']))
+             (data['begin'] >= ego['begin']))
         ]
-            # ((data['begin'] < ego['begin']) &
-            #  (data['end'] > ego['end'])) |
-            # # Someone fails to interrupt me
-            # ((data['begin'] < ego['begin']) &
-            #  (data['end'] < ego['end']))]
 
         if overlaps.empty:
             continue
@@ -676,21 +666,11 @@ def non_interruptive_simultaneous_speech(data, pIDs):
     data = data[data['pID'].isin(pIDs)]
     for i in range(len(data)):
         ego = data.iloc[i, :]
-        # This needs to be changed
         overlaps = data[
-            # someone interrupts me
-            # ((data['end'] > ego['end']) &
-            # (data['begin'] < ego['end']) &
-            # (data['begin'] >= ego['begin'])) |
-            # I fail to interrupt someone else ################ this needs to be in a separate df
+            # I fail to interrupt someone else
             ((data['begin'] <= ego['begin']) &
              (data['end'] > ego['end']))
         ]
-            # ((data['begin'] < ego['begin']) &
-            #  (data['end'] > ego['end'])) |
-            # # Someone fails to interrupt me
-            # ((data['begin'] < ego['begin']) &
-            #  (data['end'] < ego['end']))]
 
         if overlaps.empty:
             continue

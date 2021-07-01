@@ -56,7 +56,7 @@ for gID in gIDs:
             g.nodes[pID]['esl'] = str(esls[pID])
             g.nodes[pID]['isop'] = str(isops[pID])
             # g.nodes[pID]['age'] = ages[pID] # keeps np.nan
-            try:
+            try: # replaces np.nan with a string.
                 g.nodes[pID]['age'] = int(ages[pID])
             except:
                 g.nodes[pID]['age'] = str("NA")

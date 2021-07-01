@@ -68,7 +68,7 @@ for gID in gIDs:
     pIDs = pd.unique(data[data['gID'] == gID]['pID'])
     iss_pr = nx.pagerank_numpy(inets[gID], weight = 'weight', alpha = a)
     both_pr = nx.pagerank_numpy(bnets[gID], weight = 'weight', alpha = a)
-    rows = [{'pID': pID, 'iss_pr': iss_pr[pID], 'both_pr': both_pr[pID]#, 'adj_pr': adj_pr[pID]
+    rows = [{'pID': pID, 'iss_pr': iss_pr[pID], 'both_pr': both_pr[pID]
              } for pID in pIDs]
     results.extend(rows)
 prs = pd.DataFrame(results)

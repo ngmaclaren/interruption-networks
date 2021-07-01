@@ -10,7 +10,7 @@ import InterruptionAnalysis as ia
 
 import random
 random.seed(12345)
-# For analysis, I want to compare the count of each kind of triad in the empirical networks (summed across all empirical networks) against the count of the same kind of triad in n_sims number of samples of randomized copies of each graph. 
+
 print('Loading graph data...')
 data = pd.read_csv('./data/timeseries.csv', index_col = 0)
 votedata = pd.read_csv('./data/vote-data.csv')
@@ -28,6 +28,7 @@ for gID in gIDs:
     
 n_sims = 5000
 
+## Uncomment one pair of lines
 #graphs = igraphs
 #imgpath = './img/network-motifs-5000runs-iss.svg'
 #graphs = ngraphs
@@ -46,7 +47,6 @@ for sim in range(n_sims):
 empirical_triads = sum([pd.Series(nx.triadic_census(g)) for g in graphs.values()])
 simulated_triads = pd.DataFrame(sims).T
 
-# now, count how many times the value in col(x) in simulated_triads is greater than the value in row(x) in empirical_triads
 ps = pd.Series(np.nan, index = empirical_triads.index)
 for triad in list(empirical_triads.index):
     dist = simulated_triads[triad]
@@ -54,9 +54,6 @@ for triad in list(empirical_triads.index):
     p = len([d for d in dist if d > emp])/len(dist)
     ps.loc[triad] = p
 
-# significant triads have p < 0.01
-# Bonferroni correction is α' = α/m, where α is the desired α value and m is the number of hypotheses
-# but it doesn't necessarily matter because I just want to do the plot below, pulling the right count and p-value given the new data structure
 pvals = ps.sort_values()
 m = len(pvals)
 α = 0.05
@@ -73,8 +70,6 @@ pos = {'a': (1, 1), 'b': (6, 1),'c': (3.5, 5.333)}
 # scaling...
 newpos = {a: (b[0]/10, b[1]/10) for a, b in pos.items()}
 
-# empirical counts are in empirical_triads, indexed by triad name
-# p-values are in ps, indexed by triad name
 triads = list(empirical_triads.index)
 for ax, triad in zip(axs.flatten(), triads):
     g = nx.triad_graph(triad)

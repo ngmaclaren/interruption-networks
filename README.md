@@ -16,6 +16,7 @@ Once you have the diarizations stored in `timeseries.csv`, you can run `generate
 ## Known Issues
 
 - The simulations in `edge-direction-sim.py` are very slow, and load even slower in `edge-direction-plot.py`. Any suggestions for speeding these steps up would be greatly appreciated. 
+- NetworkX and igraph appear to disagree on how missing values should be represented in the GML format. There is one missing value for age. `generate-networks.py` is set to save a string value of "NA" in `XSP.gml`. This will work for NetworkX and used to work for igraph. If it doesn't, you can edit `XSP.gml` directly to read `NAN` instead of `"NA"`, or change which lines are commented in `generate-networks.py`. I have an [open question](https://stackoverflow.com/questions/68038913/error-reading-gml-file-with-missing-data-in-igraph-and-networkx) on Stack Overflow if you know how to fix this. 
 
 ## Software
 

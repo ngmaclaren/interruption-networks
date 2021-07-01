@@ -69,17 +69,17 @@ summary = results.groupby(["cond", "prob"]).agg(
 
 plt.rcParams.update({'font.size': 16})
 color0 = '#bfbfbf'
-color1 = "#ee6a50"##"#b4eeb4"#'#698b69'
-color2 = "#00688b"#'#8b7355'
+color1 = "#ee6a50"
+color2 = "#00688b"
 
 fig, axs = plt.subplots(1, 3, figsize = (21, 7))
 for cond, ax in zip(pd.unique(results["cond"]), axs.flatten()):
     for gID in gIDs:
         gr = results.loc[(results['gID'] == gID) & (results['cond'] == cond), ]
         ax.plot(gr['prob'], gr['prop'],
-                c = color0, #'#586e75',
-                linewidth = 1)#,
-        #alpha = .5)
+                c = color0,
+                linewidth = 1)
+
     ax.plot(summary.loc[summary['cond'] == cond, 'prob'],
             summary.loc[summary['cond'] == cond, 'mean_prop'],
             c = color1, linewidth = 3, label = 'Mean', zorder = 2.5)
@@ -91,7 +91,7 @@ for cond, ax in zip(pd.unique(results["cond"]), axs.flatten()):
 axs[0].set_ylabel('Pr(Leaders Match)')
 axs[0].legend()
         
-axs[0].text(0.005, 0.995, 'A', transform = axs[0].transAxes,# fontweight = "bold",
+axs[0].text(0.005, 0.995, 'A', transform = axs[0].transAxes,
            horizontalalignment = 'left', verticalalignment = 'top', fontsize = 'x-large')
 axs[1].text(0.005, 0.995, 'B', transform = axs[1].transAxes,
            horizontalalignment = 'left', verticalalignment = 'top', fontsize = 'x-large')
@@ -99,6 +99,6 @@ axs[2].text(0.005, 0.995, 'C', transform = axs[2].transAxes,
            horizontalalignment = 'left', verticalalignment = 'top', fontsize = 'x-large')
 
 fig.tight_layout()
-#fig.savefig('./img/edge-randomization.svg')
+
 fig.savefig('./img/edge-randomization.pdf')
 fig.show()
