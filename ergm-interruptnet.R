@@ -1,4 +1,6 @@
-library(statnet)
+##library(statnet)
+library(ergm)
+library(ergm.count)
 set.seed(12345)
 
 ### Uncomment one
@@ -188,26 +190,31 @@ bigmodel_triads <- ergm(
     coef = -1, reference = ~ DiscUnif(0, 10),
     response = 'weight', constraints = ~ blockdiag('gID'))
 summary(bigmodel_triads) # 
+
 ## m1 <- ergm(
 ##     mmg ~ sum + mutual,
 ##     coef = -1, reference = ~ DiscUnif(0, 10),
 ##     response = 'weight', constraints = ~ blockdiag('gID'))
+
 ## m2 <- ergm(
 ##     mmg ~ sum + mutual +
 ##         diff('tst', dir = 'h-t'),
 ##     coef = -1, reference = ~ DiscUnif(0, 10),
 ##     response = 'weight', constraints = ~ blockdiag('gID'))
+
 ## m3 <- ergm(
 ##     mmg ~ sum + mutual +
 ##         diff('tst', dir = 'h-t') + nodeicov('tst'),
 ##     coef = -1, reference = ~ DiscUnif(0, 10),
 ##     response = 'weight', constraints = ~ blockdiag('gID'))
+
 ## m4 <- ergm(
 ##     mmg ~ sum + mutual +
 ##         diff('tst', dir = 'h-t') + nodeicov('tst') +
 ##         nodematch('gender'),
 ##     coef = -1, reference = ~ DiscUnif(0, 10),
 ##     response = 'weight', constraints = ~ blockdiag('gID'))
+
 ## m5 <- ergm(
 ##     mmg ~ sum + mutual +
 ##         diff('tst', dir = 'h-t') +
@@ -216,6 +223,7 @@ summary(bigmodel_triads) #
 ##         nodeifactor('gender') + nodeofactor('gender'),
 ##     coef = -1, reference = ~ DiscUnif(0, 10),
 ##     response = 'weight', constraints = ~ blockdiag('gID'))
+
 ## m6 <- ergm(
 ##     mmg ~ sum + mutual +
 ##         ##diff('tst', dir = 'h-t') +

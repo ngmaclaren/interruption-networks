@@ -828,17 +828,22 @@ def turn_based_network(data, pIDs):
     Ref: Sauer & Kauffeld (2013)
     """
     data = data[data['pID'].isin(pIDs)]
+    #data.sort_values(by = 'begin', inplace = True, ignore_index = True)
     
     interruptions = interruptive_simultaneous_speech(data, pIDs)
     interjections = non_interruptive_simultaneous_speech(data, pIDs)
     # Sauer & Kauffeld drop simultaneous speech from consideration
-    data = data[~(data['begin'].isin(interruptions['begin'])) &
-                ~(data['begin'].isin(interjections['begin']))]
-
+    # this is the old code:
+    # data = data[~(data['begin'].isin(interruptions['begin'])) &
+    #             ~(data['begin'].isin(interjections['begin']))]
+    # the below removes interjections, since they don't switch a turn, but keeps interruptions, since they do. How to do deal with ties? I think drop ties, or make the arrow go to the one who spoke longer. 
+    data = data.loc[~data["begin"].isin(interjections["begin"]), ]
+    # remove speech events that have the same begin and end times but different speakers. This seems to remove the fewest speaking events while still ignoring Dabbs & Ruback's "group turns" as Sauer & Kauffeld seem to have done. By removing interjections and duplicates, data are increasing in both begin and end after the sort_values call, so arrows will always go to the person who finished speaking next.
+    data = data.loc[~(data.duplicated(subset = ["begin", "end"], keep = False)), ]
+    data.reset_index(inplace = True, drop = True)
     data.sort_values(by = 'begin', inplace = True, ignore_index = True)
 
     towhom = [np.nan] * len(data)
-    #np.full(shape = (len(data), 1), fill_value = np.nan, dtype = object)
     for i in data.index[:-1]:
         towhom[i] = data.loc[i + 1, 'pID']
     data['towhom'] = towhom

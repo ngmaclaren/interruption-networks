@@ -14,7 +14,6 @@ random.seed(12345)
 print('Loading graph data...')
 data = pd.read_csv('./data/timeseries.csv', index_col = 0)
 votedata = pd.read_csv('./data/vote-data.csv')
-surveydata = pd.read_csv('./data/all-surveys-calc-anon2.csv', index_col = 0)
 a = 0.99
 
 gIDs = pd.unique(data['gID'])
@@ -95,85 +94,3 @@ fig.savefig(imgpath)
 fig.show()
 plt.rcParams['font.size'] = 10
 print('done')
-
-#         return (sig_triads, sig_tetrads, emp_triads, p_vals)
-# ets = b_triads[1]
-# pvals = b_triads[2]
-
-# empty = nx.DiGraph()
-# triads = list(nx.triadic_census(empty).keys())
-# pos = {'a': (1, 1), 'b': (6, 1),'c': (3.5, 5.333)}
-# # scaling...
-# newpos = {a: (b[0]/10, b[1]/10) for a, b in pos.items()}
-
-# def triad_name(val):
-#     for key, value in triads.items():
-#         if nx.is_isomorphic(val, value):
-#             return key
-#     return "key doesn't exist"
-
-# for ax, triad in zip(axs.flatten(), triads):
-#     g = nx.triad_graph(triad)
-#     nx.draw(g, pos = newpos, with_labels = False, ax = ax,
-#             node_size = 50, width = .5,
-#             #connectionstyle = 'arc3,rad=0.2',
-#             node_color = 'k')
-#     ax.set_title(f'{triad}')
-
-#     et = [key for key in ets.keys() if nx.is_isomorphic(key, g)][0]
-#     ax.text(newpos['a'][0], newpos['a'][1] - 0.05, r'$n$ = ' + f'{ets[et]}',
-#             horizontalalignment = 'left', verticalalignment = 'top'#,
-#             #transform = ax.transAxes
-#             )
-#     ax.text(newpos['b'][0], newpos['b'][1] - 0.05, r'$p$ = ' + f'{pvals[et]}',
-#             horizontalalignment = 'right', verticalalignment = 'top'#,
-#             #transform = ax.transAxes
-#             )
-#     ax.set_axis_off()
-#     ax.set_xlim((newpos['a'][0] - 0.05, newpos['b'][0] + 0.05))
-#     ax.set_ylim((newpos['a'][1] - 0.1, newpos['c'][1] + 0.05))
-
-# fig.tight_layout()
-# plt.show()
-
-
-
-
-
-
-
-# print(len(b_triads[0])) # 2
-# print(len(sig_tetrads)) # 15
-
-# sig_tetrads = [x for x in sig_tetrads if x[0][1] > 10]
-
-# sigfig, ax = plt.subplots()
-# gs = b_triads[0]
-# nx.draw(gs[0][0][0], ax = ax)
-# ax.set_title(f'Interruption Network Motifs: freq = {gs[0][0][1]}, p = {gs[0][1]}')
-
-# # #plt.savefig('./rand-edge-motifs.pdf')
-# # plt.show()
-
-# yellow =    '#b58900'
-# orange =    '#cb4b16'
-# red =       '#dc322f'
-# magenta =   '#d33682'
-# violet =    '#6c71c4'
-# blue =      '#268bd2'
-# cyan =      '#2aa198'
-# green =     '#859900'
-
-# fig, ax = plt.subplots(1, 3, figsize = (12, 4))
-
-# def plot(p, ax, l, c): # p is the plot object, ax is which axes, l is the letter to place in the corner
-#     nx.draw(p, node_color = c, ax = ax)
-#     ax.text(x = 0, y = 1, s = l, transform = ax.transAxes,
-#             fontdict = {'size': 12},
-#             horizontalalignment = 'left', verticalalignment = 'top')
-
-# plot(p = i_triads[0][0][0], ax = ax[0], l = 'A', c = red)
-# plot(p = v_triads[0][0][0], ax = ax[1], l = 'B', c = yellow)
-# plot(p = v_triads[1][0][0], ax = ax[2], l = 'C', c = yellow)
-
-# plt.show()

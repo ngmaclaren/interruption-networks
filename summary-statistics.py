@@ -5,16 +5,12 @@ import matplotlib.pyplot as plt
 
 import InterruptionAnalysis as ia
 
-# Friday, February 12, 2021
-# Don't report Big 5, simulation, institution... I kind of think here I probably shouldn't report anything that's in the speaking time article.
-# Variable list should be: 
-# - weighted, non-normalized in/out deg
-# - PageRank as appropriate
-# - the counts: ISS, NSS
+# From LQ: Report a correlation matrix, ideally at the item level (or at the factor level if there are too many items), with means and standard deviations (if the matrix is very large, it can be included as on-line supplementary material).
 
 data = pd.read_csv('./data/timeseries.csv', index_col = 0)
 votedata = pd.read_csv('./data/vote-data.csv')
-surveydata = pd.read_csv('./data/all-surveys-calc-anon2.csv', index_col = 0)
+surveydata = pd.read_csv('./data/speakingTime-data.csv', index_col = 0)
+surveydata.set_index("pID", inplace = True)
 a = 0.99
 
 gIDs = pd.unique(data['gID'])
@@ -30,18 +26,19 @@ for gID in gIDs:
     tgraphs[gID] = nx.read_gml(f'./data/turnnets/{gID}.gml')
     vgraphs[gID] = nx.read_gml(f'./data/votenets/{gID}.gml')
 
-i_wid = {}
+    
+i_wid = {} # ISS count
 i_wod = {}
 i_pr = {}
 n_wid = {}
-n_wod = {}
+n_wod = {} # NSS count
 n_pr = {}
 b_wid = {}
 b_wod = {}
 b_pr = {}
-t_wid = {}
+t_wid = {} # total number of turns? close but not exact
 t_wod = {}
-v_wid = {}
+v_wid = {} # total number of votes
 v_wod = {}
 v_pr = {}
 
@@ -79,29 +76,59 @@ idata = pd.DataFrame({
     't_wid': t_wid, 't_wod': t_wod,
     'v_wid': v_wid, 'v_wod': v_wod, 'v_pr': v_pr
     })
-idata['gID'] = idata.index.map(lambda x: str(x)[:3])
-idata.to_csv('./data/idata-networks.csv')
 
-cols = list(idata.drop(columns = 'gID'))
-print('i mean')
-print(idata[cols].mean())
-print('i sd')
-print(idata[cols].std())
-print('i min')
-print(idata[cols].min())
-print('i max')
-print(idata[cols].max())
-print('i ICC1')
+surveydata = pd.concat([surveydata, idata], axis = 1)
+# for convenience
+surveydata["ISS"] = idata["i_wid"]
+surveydata["NSS"] = idata["n_wod"]
+surveydata["gID"] = surveydata["Group_ID"]
+# turns is not exactly equal to t_wid
+surveydata["Turns"] = data.groupby("pID")["begin"].count()
+
+# need to do some data cleaning here. NAs need to be inspected: are they missing or true zeros?
+# already taken care of for ISS and NSS
+surveydata["Turns"].fillna(0, inplace = True)
+
+# Now need to make dummies
+# Gender, English_Second_Language, Simulation, Institution, Participant_is_Operator
+# new names: d_male d_english d_simulation d_institution d_operator
+surveydata["d_male"] = surveydata["Gender"].map({"male": 1, "female": 0})
+surveydata["d_english"] = surveydata["English_Second_Language"].map({"no": 0, "yes": 1})
+surveydata["d_simulation"] = surveydata["Simulation"].map({"bct": 0, "cs": 1})
+surveydata["d_institution"] = surveydata["Institution"].map({"S1": 0, "S2": 1})
+surveydata["d_operator"] = surveydata["Participant_Is_Operator"].map({"no": 0, "yes": 1})
+
+surveydata["Total_Speaking_Time"] /= 1000
+
+# this keeps all the columns from the ORB data and adds node level data from each network
+# save this data to CSV for 2SLS analysis in Stata
+surveydata.to_csv("./data/speakingTime-data-extended.csv")
+
+# Variable List:
+# ISS, NSS, Turns, TST, Votes
+# Collect also: gender, age, game knowledge, esl, operator status, conscientiousness, agreeableness, neuroticism, openness, extraversion, group size, simulation, institution
+cols = ['ISS', 'NSS', 'Turns', 'Total_Speaking_Time', 'Planning_Phase_Vote_Total',
+        'd_male', 'Age', 'Game_Knowledge_Quiz', 'd_english', 'd_operator',
+        'Conscientiousness', 'Agreeableness', 'Neuroticism', 'Openness', 'Extraversion',
+        'Group_Size', 'd_simulation', 'd_institution']
+# To do summary statistics, need to 
+dat = surveydata.loc[:, cols]
+dat.corr("pearson").to_csv("./data/icorr.csv")
+
+# want a data frame that has variables as rows and the following columns:
+## mean, median, sd, min, max, ICC1
+summarystats = dat.agg([np.mean, np.median, np.std, min, max]).T
+dat["gID"] = surveydata["gID"]
+summarystats["icc1"] = np.nan
 for col in cols:
-    X = idata[[col, 'gID']]
+    X = dat[[col, "gID"]]
     model = f'{col} ~ gID'
-    k = X.groupby('gID').count().mean()
-    print(f'{col}: {ia.icc1(X, model, k)}')
-icorr = idata[cols].corr('pearson')
-icorr.to_csv('./data/icorr-networks.csv')
+    k = X.groupby("gID").count().mean()
+    summarystats.loc[col, "icc1"] = ia.icc1(X, model, k)
+summarystats.to_csv("./data/i-sumstats.csv")
 
 # group
-# So, perhaps one table for group-level variables (size, % female, total TST, avg TST, total ISS, total NSS, avg ISS, avg NSS, perhaps also total number of turns and average number of turns) and another table for network statistics. Can do the table as a letter-sectioned column of smaller tables with mean, sd, min, max, corr within for each type of network.
+
 size = {}
 p_female = {}
 t_tst = {}
@@ -149,6 +176,8 @@ gdata = pd.DataFrame({
     't_turns': t_turns, 'a_turns': a_turns
     })
 gdata.to_csv('./data/gdata-nodes.csv')
+gsumstat = gdata.agg([np.mean, np.median, np.std, min, max]).T
+gsumstat.to_csv("./data/g-sumstat.csv")
 
 print('g mean')
 print(gdata.mean())
@@ -202,111 +231,3 @@ for G, name in zip(graphs, ['i', 'n', 'b', 't', 'v']):
     print(ndata.max())
 
     print(ndata.corr('pearson'))
-
-
-
-
-
-
-    
-# tst = {}
-# gender = {}
-# wid = {}
-# wod = {}
-# pr = {}
-# vid = {}
-# vod = {}
-# vpr = {}
-# bpr = {}
-# for gID in gIDs:
-#     ig = igraphs[gID]
-#     vg = vgraphs[gID]
-#     bg = bgraphs[gID]
-#     prs = nx.pagerank_numpy(ig, weight = 'weight', alpha = a)
-#     vprs = nx.pagerank_numpy(vg, alpha = a)
-#     bprs = nx.pagerank_numpy(bg, weight = 'weight', alpha = a)
-#     for pID in pd.unique(votedata[votedata['gID'] == gID]['pID']):
-#         if pID in ig.nodes:
-#             tst[pID] = nx.get_node_attributes(ig, 'tst')[pID]
-#             wid[pID] = ig.in_degree(weight = 'weight')[pID]
-#             wod[pID] = ig.out_degree(weight = 'weight')[pID]
-#             pr[pID] = prs[pID]
-#             bpr[pID] = bprs[pID]
-#         else:
-#             tst[pID] = 0
-#             wid[pID] = 0
-#             wod[pID] = 0
-#             pr[pID] = 0
-#         gender[pID] = surveydata.loc[pID, 'gender']
-        
-#         vid[pID] = vg.in_degree()[pID]
-#         vod[pID] = vg.out_degree()[pID]
-#         vpr[pID] = vprs[pID]
-# idata = pd.DataFrame({'tst': tst, 'gender': gender, 'wid': wid, 'wod': wod, 'pr': pr, 'vid': vid, 'vod': vod, 'vpr': vpr, 'bpr': bpr})
-# idata['tst'] = idata['tst']/1000
-# idata['gender'] = idata['gender'].map({'female': 0, 'male': 1})
-# idata['gID'] = idata.index.map(lambda x: str(x)[:3])
-# idata.to_csv('./data/idata.csv')
-
-# # size, density, wcc/size, scc/wcc, centralization, avg clustering, avg shortest path length
-# size = {}
-# density = {}
-# vdensity = {}
-# wccsize = {}
-# sccwcc = {}
-# cent = {}
-# vcent = {}
-# avgclust = {}
-# vavgclust = {}
-# #aspl = {}
-# #vaspl = {}
-# for gID in gIDs:
-#     ig = igraphs[gID]
-#     vg = vgraphs[gID]
-#     size[gID] = len(ig)
-#     density[gID] = nx.density(ig)
-#     vdensity[gID] = nx.density(vg)
-#     wccsize[gID] = len(ia.get_wcc(ig))/len(ig)
-#     sccwcc[gID] = len(ia.get_scc(ig))/len(ia.get_wcc(ig))
-#     cent[gID] = ia.pagerank_centralization(ig, alpha = a,  weight = 'weight')
-#     vcent[gID] = ia.pagerank_centralization(vg, alpha = a)
-#     avgclust[gID] = nx.average_clustering(ig, weight = 'weight')
-#     vavgclust[gID] = nx.average_clustering(vg)
-# gdata = pd.DataFrame({'size': size, 'density': density, 'vdensity': vdensity, 'wccsize': wccsize, 'sccwcc': sccwcc, 'cent': cent, 'vcent': vcent, 'avgclust': avgclust, 'vavgclust': vavgclust})
-# gdata.to_csv('./data/gdata.csv')
-
-# cols = list(idata.drop(columns = 'gID'))
-
-# print(idata[cols].corr('spearman'))
-# print(gdata.corr('spearman'))
-
-# # Still need to do individual and group level means, medians, stdevs, ranges, and icc1s.
-# print('i means')
-# print(idata[cols].apply(np.mean))
-# print('i medians')
-# print(idata[cols].apply(np.median))
-# print('i stdevs')
-# print(idata[cols].apply(np.std))
-# print('i range')
-# print(idata[cols].apply(min))
-# print(idata[cols].apply(max))
-# print('ICC1')
-# for col in cols:
-#     X = idata[[col, 'gID']]
-#     model = f'{col} ~ gID'
-#     k = X.groupby('gID').count().mean()
-#     print(f'{col}: {ia.icc1(X, model, k)}')
-
-# print('g means')
-# print(gdata.apply(np.mean))
-# print('g medians')
-# print(gdata.apply(np.median))
-# print('g stdevs')
-# print(gdata.apply(np.std))
-# print('g range')
-# print(gdata.apply(min))
-# print(gdata.apply(max))
-
-
-
-

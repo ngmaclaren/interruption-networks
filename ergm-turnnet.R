@@ -1,8 +1,8 @@
-library(statnet)
+##library(statnet)
+library(ergm)
 set.seed(12345)
 
 loc <- './data/turnnets/'
-
 ext <- '.gml'
 graph_files <- list.files(loc, pattern = paste0(ext, "$"))
 graphs <- list()
@@ -169,10 +169,11 @@ bigmodel_triads <- ergm(
     coef = -1, reference = ~ DiscUnif(0, 10),
     response = 'weight', constraints = ~ blockdiag('gID'))
 summary(bigmodel_triads)
-## m1 <- ergm(
-##     mmg ~ sum + mutual,
-##     coef = -1, reference = ~ DiscUnif(0, 10),
-##     response = 'weight', constraints = ~ blockdiag('gID'))
+
+m1 <- ergm(
+    mmg ~ sum + mutual,
+    coef = -1, reference = ~ DiscUnif(0, 10),
+    response = 'weight', constraints = ~ blockdiag('gID'))
 ## m2 <- ergm(
 ##     mmg ~ sum + mutual +
 ##         diff('tst', dir = 'h-t'),

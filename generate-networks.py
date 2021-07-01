@@ -1,8 +1,20 @@
+import os
 import numpy as np
 import pandas as pd
 import networkx as nx
 
 import InterruptionAnalysis as ia
+
+if not os.path.isdir('./data/networks-iss'):
+    os.mkdir('./data/networks-iss')
+if not os.path.isdir('./data/networks-nss'):
+    os.mkdir('./data/networks-nss')
+if not os.path.isdir('./data/networks-both'):
+    os.mkdir('./data/networks-both')
+if not os.path.isdir('./data/votenets'):
+    os.mkdir('./data/votenets')
+if not os.path.isdir('./data/turnnets'):
+    os.mkdir('./data/turnnets')
 
 data = pd.read_csv('./data/timeseries.csv', index_col = 0)
 votedata = pd.read_csv('./data/vote-data.csv')
@@ -19,7 +31,7 @@ for gID in gIDs:
     genders = surveydata.loc[pIDs, 'Gender']
     esls = surveydata.loc[pIDs, 'English_Second_Language']
     isops = surveydata.loc[pIDs, 'Participant_Is_Operator']
-    #ages = surveydata.loc[pIDs, 'Age']
+    ages = surveydata.loc[pIDs, 'Age']
     ints = surveydata.loc[pIDs, 'Intelligence']
     gks = surveydata.loc[pIDs, 'Game_Knowledge_Quiz']
     insts = surveydata.loc[pIDs, 'Institution']
@@ -34,7 +46,7 @@ for gID in gIDs:
     igi = ia.interruption_network_pandas(data, pIDs, use = 'iss')
     ign = ia.interruption_network_pandas(data, pIDs, use = 'nss')
     igb = ia.interruption_network_pandas(data, pIDs, use = 'both')
-    vg = ia.vote_network(votedata, pIDs, votecols, self_loops = True) # prev: self_loops = False, the default
+    vg = ia.vote_network(votedata, pIDs, votecols, self_loops = True)
     tg = ia.turn_based_network(data, pIDs)
 
     for pID in pIDs:
@@ -43,10 +55,11 @@ for gID in gIDs:
             g.nodes[pID]['tst'] = int(tsts[pID])
             g.nodes[pID]['esl'] = str(esls[pID])
             g.nodes[pID]['isop'] = str(isops[pID])
-            #try:
-            #    g.nodes[pID]['age'] = int(ages[pID])
-            #except:
-            #    g.nodes[pID]['age'] = str("NA") # float(np.nan) 
+            # g.nodes[pID]['age'] = ages[pID] # keeps np.nan
+            try:
+                g.nodes[pID]['age'] = int(ages[pID])
+            except:
+                g.nodes[pID]['age'] = str("NA")
             g.nodes[pID]['intel'] = float(ints[pID])
             g.nodes[pID]['gameknowl'] = int(gks[pID])
             g.nodes[pID]['inst'] = str(insts[pID])
